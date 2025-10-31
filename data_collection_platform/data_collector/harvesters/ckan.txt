@@ -1,0 +1,128 @@
+# data_collector/harvesters/ckan.py
+from __future__ import annotations
+import requests, datetime as dt
+
+from data_collector.http import session as http_session
+from data_collector.utils import coerce_dt
+
+HEADERS = {"User-Agent": "OGSL-harvester/1.0"}
+
+S = http_session()  # <<< session avec retries
+
+# CKAN_BASES = {
+#     'OpenGouv': 'https://open.canada.ca/data/en/api/3/action/recently_changed_packages_activity_list',
+#     'CanWin' : 'https://canwin-datahub.ad.umanitoba.ca/data/api/3/action/package_list',
+#     'DonneesQuebec': 'https://www.donneesquebec.ca/recherche/api/action/package_list',
+# }
+
+CKAN_BASES = {
+    # Note: /data/en/api/… pour OpenGouv; /data/api/… pour CanWin
+    "OpenGouv":      "https://open.canada.ca/data/en/api/3/action",
+    "CanWin":        "https://canwin-datahub.ad.umanitoba.ca/data/api/3/action",
+    "DonneesQuebec": "https://www.donneesquebec.ca/recherche/api/3/action",
+}
+
+
+# fields mapping helper
+def _ckan_to_dataset(pkg: dict) -> dict:
+    org = (pkg.get('organization') or {}).get('title', '')
+    # tags = [t.get('display_name') for t in pkg.get('tags', []) if t.get('display_name')]
+    tags = [t.get('display_name') or t.get('name') for t in pkg.get('tags', []) if (t.get('display_name') or t.get('name'))]
+    lic = pkg.get('license_title') or pkg.get('license_id') or ''
+    url = pkg.get('url') or pkg.get('ckan_url') or ''
+    # created = pkg.get('metadata_created')
+    # modified = pkg.get('metadata_modified')
+    return {
+        # 'external_id': pkg.get('id'),
+        # 'title': pkg.get('title') or pkg.get('name'),
+        # 'description': pkg.get('notes') or '',
+        # 'keywords': tags,
+        # 'organization': org,
+        # 'license': lic,
+        # 'url': url,
+        # 'extras': {'resources': pkg.get('resources', [])},
+        # 'created_at_src': created,
+        # 'modified_at_src': modified,
+
+        'external_id': pkg.get('id'),
+        'title': pkg.get('title') or pkg.get('name') or '',
+        'description': pkg.get('notes') or '',
+        'keywords': tags or [],
+        'organization': org or '',
+        'license': lic,
+        'url': url,
+        'extras': {'resources': pkg.get('resources', []), 'metadata_created': pkg.get('metadata_created')},
+        'created_at_src': pkg.get('metadata_created'),
+        'modified_at_src': pkg.get('metadata_modified'),
+    }
+
+def _page(base_url: str, params: dict):
+    r = requests.get(f"{base_url}/package_search", params=params, timeout=60, headers=HEADERS)
+    r.raise_for_status()
+    j = r.json()
+    if not j.get("success", True):
+        return 0, []
+    res = j.get("result", {})
+    return res.get("count", 0), res.get("results", [])
+
+
+
+# def search(base_url: str, q: str = '', filters: dict | None = None, rows: int = 100, max_pages: int = 5):
+#     """Generator over CKAN package_search results."""
+#     params = { 'q': q or '*:*', 'rows': rows, 'start': 0 }
+#     # Build fq from filters (e.g., { 'organization': 'xxx', 'res_format': 'CSV' })
+#     if filters:
+#         fq_chunks = [f"{k}:{v}" for k, v in filters.items() if v]
+#         if fq_chunks:
+#             params['fq'] = ' '.join(fq_chunks)
+
+
+#     for page in range(max_pages):
+#         r = requests.get(f"{base_url}/package_search", params=params, timeout=60)
+#         r.raise_for_status()
+#         data = r.json()['result']
+#         for pkg in data.get('results', []):
+#             yield pkg
+#         if data.get('count', 0) <= params['start'] + params['rows']:
+#             break
+#         params['start'] += params['rows']
+
+def search(base_url: str, q: str = '', filters: dict | None = None, rows: int = 100, max_pages: int = 5):
+    # 1) première passe: q tel quel (ou *:*)
+    params = {'q': q or '*:*', 'rows': rows, 'start': 0}
+    if filters:
+        fq = ' '.join(f"{k}:{v}" for k, v in filters.items() if v)
+        if fq:
+            params['fq'] = fq
+
+    total_seen = 0
+    for _ in range(max_pages):
+        count, results = _page(base_url, params)
+        if results:
+            for pkg in results:
+                yield pkg
+            total_seen += len(results)
+            if total_seen >= count:
+                break
+            params['start'] += rows
+        else:
+            break
+
+    # 2) fallback si rien trouvé et q non vide: élargir la requête
+    if q and total_seen == 0:
+        params = {
+            'q': f"title:{q} OR notes:{q} OR tags:{q}",
+            'rows': rows,
+            'start': 0
+        }
+        for _ in range(max_pages):
+            count, results = _page(base_url, params)
+            if results:
+                for pkg in results:
+                    yield pkg
+                total_seen += len(results)
+                if total_seen >= count:
+                    break
+                params['start'] += rows
+            else:
+                break

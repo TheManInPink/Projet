@@ -1,0 +1,39 @@
+# data_collector/harvesters/dataverse.py
+from __future__ import annotations
+import requests
+
+# UQAR dataverse subtree
+DATAVERSE_SEARCH = 'https://borealisdata.ca/api/search'
+HEADERS = {"User-Agent": "OGSL-harvester/1.0"}
+
+
+def search(subtree_alias: str = 'uqar', q: str = '*', per_page: int = 100, max_pages: int = 5):
+    # params = { 'q': q, 'type': 'dataset', 'subtree': subtree_alias, 'per_page': per_page, 'start': 0 }
+    params = {'q': q or '*', 'type': 'dataset', 'subtree': subtree_alias, 'per_page': per_page, 'start': 0}
+    for _ in range(max_pages):
+        # r = requests.get(DATAVERSE_SEARCH, params=params, timeout=60)
+        r = requests.get(DATAVERSE_SEARCH, params=params, timeout=60, headers=HEADERS)
+        r.raise_for_status()
+        data = r.json()
+        items = (data.get('data') or {}).get('items', [])
+        for it in items:
+            yield it
+        total = (data.get('data') or {}).get('total_count', 0)
+        if params['start'] + params['per_page'] >= total:
+            break
+        params['start'] += params['per_page']
+
+def to_dataset(item: dict) -> dict:
+    # Map dataverse search item -> Dataset fields
+    return {
+        'external_id': item.get('global_id') or item.get('name'),
+        'title': item.get('name') or '',
+        'description': item.get('description') or '',
+        'keywords': item.get('keywords') or [],
+        'organization': (item.get('identifier_of_dataverse') or '').upper(),
+        'license': '',
+        'url': item.get('url') or '',
+        'extras': {'citation': item.get('citation'), 'fileCount': item.get('fileCount')},
+        'created_at_src': item.get('published_at'),
+        'modified_at_src': item.get('publication_date'),
+}

@@ -1,0 +1,12 @@
+# ui/views.py
+from django.shortcuts import render
+from django.db.models import Q
+from data_collector.models import Dataset
+
+
+def index(request):
+    q = request.GET.get('q','').strip()
+    qs = Dataset.objects.all()
+    if q:
+        qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q) | Q(organization__icontains=q))
+    return render(request, 'ui/index.html', { 'q': q, 'datasets': qs[:100] })

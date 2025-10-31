@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <!-- Bootstrap 5.3.8 + Font Awesome 7.0.1 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" rel="stylesheet">
+    <link href="{% static 'admin/custom.css' %}" rel="stylesheet">
+{% endblock %}
+
+{% block branding %}
+    <h1 id="site-name" class="m-0">
+    <a href="{% url 'admin:index' %}" class="text-decoration-none">
+        <i class="fa-solid fa-database me-2"></i> OGSL — Administration
+    </a>
+    </h1>
+{% endblock %}
+
+{% block footer %}
+  {{ block.super }}
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}

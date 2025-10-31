@@ -1,0 +1,52 @@
+<!-- ui/templates/ui/index.html -->
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Catalogues de données</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg bg-white shadow-sm">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/">OGSL</a>
+            <a class="btn btn-sm btn-outline-primary" href="/swagger/"><i class="fa fa-book"></i> Swagger</a>
+            <a class="btn btn-sm btn-outline-secondary ms-2" href="/graphql"><i class="fa fa-code"></i> GraphQL</a>
+            <a class="btn btn-sm btn-outline-success ms-2" href="/stats"><i class="fa fa-chart-line"></i> Stats</a>
+        </div>
+    </nav>
+
+
+    <main class="container py-4">
+        <form class="row g-2 mb-3">
+            <div class="col-md-10">
+                <input name="q" value="{{ q }}" class="form-control form-control-lg" placeholder="Rechercher (titre, description, organisation)">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary btn-lg"><i class="fa fa-search"></i> Rechercher</button>
+            </div>
+        </form>
+
+
+        <div class="list-group shadow-sm">
+            {% for d in datasets %}
+            <a class="list-group-item list-group-item-action" href="{{ d.url }}" target="_blank">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">{{ d.title }}</h5>
+                    <small class="text-muted">{{ d.organization }}</small>
+                </div>
+                <p class="mb-1 text-truncate">{{ d.description }}</p>
+                <small class="text-muted">{{ d.license }} · {{ d.modified_at_src|default:d.created_at_src }}</small>
+            </a>
+            {% empty %}
+            <div class="list-group-item">Aucun résultat.</div>
+            {% endfor %}
+        </div>
+    </main>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

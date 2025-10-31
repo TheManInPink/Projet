@@ -1,0 +1,91 @@
+# data_collector/management/commands/harvest.py
+from django.core.management.base import BaseCommand, CommandError
+from data_collector.models import DataSource, Dataset, HarvestingLog
+from data_collector.harvesters import ckan as ckan_h, dataverse as dv_h
+from django.utils.dateparse import parse_datetime
+
+
+class Command(BaseCommand):
+    help = "Moissonner des jeux de données depuis CKAN/Dataverse."
+
+
+    def add_arguments(self, parser):
+        parser.add_argument('--source', required=True,
+                                choices=['OpenGouv','CanWin','DonneesQuebec','Borealis']
+                            )
+        parser.add_argument('--q', default='')
+        parser.add_argument('--max', type=int, default=500)
+
+        #
+        parser.add_argument('--rows', type=int, default=100)
+        parser.add_argument('--max-pages', type=int, default=5)
+
+
+    def handle(self, *args, **opts):
+        source_name = opts['source']
+        q = opts['q']
+
+        # 
+        rows = opts['rows']
+        max_pages = opts['max_pages']
+        # 
+
+        log = HarvestingLog.objects.create(query=q, status=HarvestingLog.PENDING)
+        ds = None
+        count = 0
+
+        try:
+            # Ensure DataSource exists
+            # Dataverse / Borealis
+            if source_name == 'Borealis':
+                ds, _ = DataSource.objects.get_or_create(
+                    name='Borealis',
+                    defaults={
+                        'base_url': 'https://borealisdata.ca', 'kind': DataSource.DATAVERSE
+                    }
+                )
+                # Attacher la source au log dès maintenant
+                log.source = ds
+                # count = 0
+                for item in dv_h.search(subtree_alias='uqar', q=q, per_page=rows, max_pages=max_pages):
+                    data = dv_h.to_dataset(item)
+                    Dataset.objects.update_or_create(
+                        source=ds, external_id=data['external_id'], defaults=data
+                    )
+                    count += 1
+                    if count >= opts['max']:
+                        break
+            elif source_name in ckan_h.CKAN_BASES:
+                # base = ckan_h.CKAN_BASES[source_name if source_name!='DonneesQuebec' else 'DonneesQuebec']
+                base = ckan_h.CKAN_BASES[source_name]
+                ds, _ = DataSource.objects.get_or_create(name=source_name, defaults={
+                    'base_url': base, 'kind': DataSource.CKAN
+                })
+                # count = 0
+                log.source = ds
+                for pkg in ckan_h.search(base_url=base, q=q, rows=rows, max_pages=max_pages):
+                    data = ckan_h._ckan_to_dataset(pkg)
+                    Dataset.objects.update_or_create(
+                        source=ds, external_id=data['external_id'], defaults=data
+                    )
+                    count += 1
+                    if count >= opts['max']:
+                        break
+            else:
+                raise CommandError(f"Unknown source: {source_name}")
+
+
+            # log.source = ds
+            log.items_found = count
+            log.status = HarvestingLog.OK
+            log.message = f"Harvested {count} items from {source_name} (q='{q}')"
+            log.save()
+            self.stdout.write(self.style.SUCCESS(log.message))
+
+        except Exception as e:
+            log.status = HarvestingLog.ERROR
+            if ds:               # <<< ne pas référencer ds s'il est None
+                log.source = ds
+            log.message = str(e)
+            log.save()
+            raise CommandError(f"Harvest error: {e}")
